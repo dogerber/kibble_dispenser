@@ -1,11 +1,9 @@
 /*
-This is a test sketch for the Adafruit assembled Motor Shield for Arduino v2
-It won't work with v1.x motor shields! Only for the v2's with built in PWM
-control
-
-For use with the Adafruit Motor Shield v2
----->	http://www.adafruit.com/products/1438
+Kibble Dispenser by Dominic Gerber
+https://github.com/dogerber/kibble_dispenser
 */
+
+#define CODE_VERSION "0.1"
 
 #include <Adafruit_MotorShield.h>
 #include <EasyButton.h>
@@ -15,10 +13,14 @@ For use with the Adafruit Motor Shield v2
 #include <Adafruit_SSD1306.h> // display
 
 // Global Parameters
-#define WAIT_TIME_MS 1000 * 60 * 60 // todo clear up
-#define PUSH_TIME_MS 500
-
-bool do_beep = false;
+bool do_beep = true;
+const unsigned long min_wait_time_ms = 600000;         // [ms] minimum time to wait to dispense
+const unsigned long max_wait_time_ms = 3600000;        // [ms] maximum time to wait
+const int kibbles_total_available = 9;                 // how many fit into the dispenser [default: 9]
+int motor_speed = 90;                                  //[0-255] 0 (off) to 255 (max speed)
+const int max_dispenser_timeouts = 2;                  // after this many dispense tries, i stop trying
+const unsigned long max_time_dispensing_ms = 6 * 1000; // time after it stops dispensing if no kibble falls out
+const int max_time_back_move = 10 * 1000;              // [ms] maximum time of backwards movement (for when triggered by program)//todo reset to 10
 
 // Create the motor shield object with the default I2C address
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
@@ -29,8 +31,7 @@ Adafruit_DCMotor *myMotor = AFMS.getMotor(1); // Select which 'port' M1, M2, M3 
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
 
 // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
-// The pins for I2C are defined by the Wire-library.
-// On an arduino UNO:       A4(SDA), A5(SCL)
+// On an Arduino UNO:       A4(SDA), A5(SCL)
 #define OLED_RESET -1       // Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
@@ -47,29 +48,22 @@ const byte interruptPin = 2; // connected to IR
 const int buzzerPin = 9;
 
 // random triggering of dispensing
-const unsigned long min_wait_time_ms = 1000 * 5;  //
-const unsigned long max_wait_time_ms = 1000 * 15; //
-unsigned long wait_time = random(min_wait_time_ms, max_wait_time_ms);
+unsigned long wait_time;
 
 volatile bool change_detected = false;
 bool reset_done = false; // this is set true if the machine reset the plunger, waiting to be filled, press green button to confirm filling
 volatile bool back_move_toggle = false;
 bool back_move_toggle_before = false;
 unsigned long time_back_move_started = millis();
-const int max_time_back_move = 2 * 1000; // [ms] maximum time of backwards movement (for when triggered by program)//todo reset to 10
 
-int motor_speed = 125;                                 //[0-255] 0 (off) to 255 (max speed)
-const unsigned long max_time_dispensing_ms = 6 * 1000; // time after it stops dispensing if no kibble falls out
 int dispenser_timeout_counter = 0;
-const int max_dispenser_timeouts = 2;
 unsigned long time_last_dispense = 0;
 
 unsigned long time_last_display_refresh = millis();
 const int display_refresh_time = 1000 * 1; // refresh rate of screen
 
-int kibbles_dispensed = 0;             // resets when filling dispenser
-int kibbles_dispensed_total = 0;       // just counts up
-const int kibbles_total_available = 2; // how many fit into the dispenser [default: 9] //todo set to 9
+int kibbles_dispensed = 0;       // resets when filling dispenser
+int kibbles_dispensed_total = 0; // just counts up
 
 /*
 Function to dispense a kibble. Once started it is stopped by the IR sensor (which detects a kibble falling down)
@@ -84,7 +78,7 @@ void dispense_kibble()
   if (kibbles_dispensed >= kibbles_total_available)
   {
     // error sound
-    if (true)
+    if (do_beep)
     {
       tone(buzzerPin, 200);
       delay(200);
@@ -103,28 +97,20 @@ void dispense_kibble()
   int motor_speed_i = motor_speed;
   int count = 0;
 
-  Serial.println("starting dispensing");
   while (do_run)
   {
     myMotor->run(FORWARD);
-    // todo remove? delay(PUSH_TIME_MS);
-    // speed up?
-    // if (motor_speed_i<255){
-    //   count++;
-    //   motor_speed_i = motor_speed + count/100;
-    //   myMotor->setSpeed(motor_speed_i);
-    //   Serial.println(motor_speed_i);
-    // }
 
-    if (change_detected)
+    if (change_detected) // succesfull dispensed a kibble
     {
       do_run = false;
       change_detected = false;
       kibbles_dispensed++;
       kibbles_dispensed_total++;
+      dispenser_timeout_counter = 0;
     }
 
-    // button pressed, abort
+    // button1 pressed, abort
     if ((time_start - millis() > 100) &&
         (!button1.read()))
     {
@@ -146,7 +132,6 @@ void dispense_kibble()
   }
 
   // stop motor
-  Serial.println("stopping dispensing");
   myMotor->run(RELEASE);
   if (do_beep)
   {
@@ -165,7 +150,7 @@ void check_ir_led()
 // orange button
 void onButton2Pressed()
 {
-  dispense_kibble();
+  dispense_kibble(); // it would be better to not do this, because this is blocking behaviour
 }
 
 // green button
@@ -188,7 +173,12 @@ void onButton1Pressed()
 void setup()
 {
   Serial.begin(115200); // set up Serial library at 9600 bps
-  Serial.println("kibble_dispenser_code.ino started");
+  Serial.print("kibble_dispenser_code.ino started, v");
+  Serial.println(CODE_VERSION);
+
+  // init randomseed
+  randomSeed(analogRead(1));
+  wait_time = random(min_wait_time_ms, max_wait_time_ms);
 
   // ----- PIN setups
   pinMode(buzzerPin, OUTPUT);
@@ -223,9 +213,10 @@ void setup()
     display.setTextSize(1);              // Normal 1:1 pixel scale
     display.setTextColor(SSD1306_WHITE); // Draw white text
     display.setCursor(0, 0);             // Start at top-left corner
-    display.print("kibble_dispenser");
+    display.print("kibble_dispenser v");
+    display.print(CODE_VERSION);
     display.display();
-    // delay(1000); // Pause for 2 seconds
+    delay(1000); // Pause for 2 seconds
   }
 
   // Clear the buffer
@@ -265,14 +256,14 @@ void loop()
   button2.read();
 
   // debugging output
-  if ((millis() % 50) == 0)
+  if (true && (millis() % 50) == 0)
   {
     char buff[128];
-    sprintf(buff, "back_move_toggle %d, kibbles_dispensed: %d", back_move_toggle, kibbles_dispensed);
-    Serial.println(buff);
+    // sprintf(buff, "back_move_toggle %d, kibbles_dispensed: %d", back_move_toggle, kibbles_dispensed);
+    // Serial.println(buff);
     // sprintf(buff, "millis() %d, millis() - time_back_move_started %d, time_back_move_started %d,", millis(), millis() - time_back_move_started, time_back_move_started);
     // Serial.println(buff);
-    sprintf(buff, "wait_time %lu, wait_time/1000 %lu,", wait_time, wait_time / 1000);
+    sprintf(buff, "time_last_dispense %lu, ((millis() - time_last_dispense))  %lu, wait_time %lu, wait_time/1000 %lu,", time_last_dispense, ((millis() - time_last_dispense)), wait_time, wait_time / 1000);
     Serial.println(buff);
   }
 
@@ -295,20 +286,21 @@ void loop()
     // tell user to refill
     if (reset_done)
     {
-      display.print("REFILL\n");
+      display.print("REFILL\n Press Green Button \n after filling");
     }
     else if (dispenser_timeout_counter >= max_dispenser_timeouts)
     {
-      display.print("FAILED TO DISPENSE MULTIPLE TIMES\n");
+      display.print("FAILED TO DISPENSE\n MULTIPLE TIMES\n Press Green to reset");
     }
     else
     {
-      sprintf(buff, "disp: %d / %d, tot %d \n ", kibbles_dispensed, kibbles_total_available, kibbles_dispensed_total);
+      sprintf(buff, "disp: %d / %d,\n tot %d \n ", kibbles_dispensed, kibbles_total_available, kibbles_dispensed_total);
       display.print(buff);
 
       // show time till next auto dispening if (true)
       {
-        sprintf(buff, "time: %lu / %lu sec ", ((millis() - time_last_dispense)) / 1000, (wait_time) / 1000);
+        sprintf(buff, "time: %lu / %lu min ", ((millis() - time_last_dispense)) / 60000, (wait_time) / 60000); // conversion to minutes /60000
+        // Serial.println(buff);
         display.print(buff);
       }
     }
@@ -329,7 +321,6 @@ void loop()
   {                        // motor state needs to be changed
     if (!back_move_toggle) // if already moving, stop the movement
     {
-      // delay(PUSH_TIME_MS); // stop movement
       myMotor->run(RELEASE);
       back_move_toggle_before = false;
     }
@@ -346,7 +337,6 @@ void loop()
   if (back_move_toggle && (millis() - time_back_move_started > max_time_back_move))
   {
     back_move_toggle = false;
-    Serial.println("backmovement timeout");
   }
 
   if (change_detected)

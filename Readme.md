@@ -1,5 +1,15 @@
 # Kibble Dispenser
 
+Todo:
+
+- testing
+- add video to .md
+- documentation
+- wiring diagram
+- button for on/off and buzzer
+- 3d print enclsure for arduino
+- better dispenser, which does not fall over?
+
 ## Purpose
 
 This device is meant to automatically dispense cat treats to keep cats active during the day. Treats are placed in the small compartments and randomly dispensed within a given time frame.
@@ -30,9 +40,3 @@ This device is meant to automatically dispense cat treats to keep cats active du
 - Adafruit Motor Shield v2
 
 ---
-
-## Todo
-
-- add screen
-- add random timing
-- add stop function to button
