@@ -46,6 +46,11 @@ const byte ledPin = 13;
 const byte interruptPin = 2; // connected to IR
 const int buzzerPin = 9;
 
+// random triggering of dispensing
+const unsigned long min_wait_time_ms = 1000 * 5;  //
+const unsigned long max_wait_time_ms = 1000 * 15; //
+unsigned long wait_time = random(min_wait_time_ms, max_wait_time_ms);
+
 volatile bool change_detected = false;
 bool reset_done = false; // this is set true if the machine reset the plunger, waiting to be filled, press green button to confirm filling
 volatile bool back_move_toggle = false;
@@ -55,6 +60,8 @@ const int max_time_back_move = 2 * 1000; // [ms] maximum time of backwards movem
 
 int motor_speed = 125;                                 //[0-255] 0 (off) to 255 (max speed)
 const unsigned long max_time_dispensing_ms = 6 * 1000; // time after it stops dispensing if no kibble falls out
+int dispenser_timeout_counter = 0;
+const int max_dispenser_timeouts = 2;
 unsigned long time_last_dispense = 0;
 
 unsigned long time_last_display_refresh = millis();
@@ -128,6 +135,7 @@ void dispense_kibble()
     if (millis() - time_start > max_time_dispensing_ms)
     {
       do_run = false;
+      dispenser_timeout_counter++;
       if (do_beep)
       {
         tone(buzzerPin, 500);
@@ -166,12 +174,14 @@ void onButton1Pressed()
   if (reset_done)
   {
     kibbles_dispensed = 0;
+    dispenser_timeout_counter = 0;
     reset_done = false;
   }
   else
   {
     back_move_toggle = !back_move_toggle;
     kibbles_dispensed = 0; // reset counter, as now the user should have filled the dispenser
+    dispenser_timeout_counter = 0;
   }
 }
 
@@ -255,19 +265,23 @@ void loop()
   button2.read();
 
   // debugging output
-  if ((millis() % 500) == 0)
+  if ((millis() % 50) == 0)
   {
     char buff[128];
     sprintf(buff, "back_move_toggle %d, kibbles_dispensed: %d", back_move_toggle, kibbles_dispensed);
     Serial.println(buff);
-    sprintf(buff, "millis() %d, millis() - time_back_move_started %d, time_back_move_started %d,", millis(), millis() - time_back_move_started, time_back_move_started);
+    // sprintf(buff, "millis() %d, millis() - time_back_move_started %d, time_back_move_started %d,", millis(), millis() - time_back_move_started, time_back_move_started);
+    // Serial.println(buff);
+    sprintf(buff, "wait_time %lu, wait_time/1000 %lu,", wait_time, wait_time / 1000);
     Serial.println(buff);
   }
 
-  // todo add random triggering of the dispenser
-  // const unsigned long min_wait_time_ms = 1000 * 1;  //
-  // const unsigned long max_wait_time_ms = 1000 * 10; //
-  // unsigned long wait_time = random(min_wait_time_ms, max_wait_time_ms);
+  // add random triggering of the dispenser
+  if ((kibbles_dispensed < kibbles_total_available) && (millis() - time_last_dispense > wait_time) && (dispenser_timeout_counter < max_dispenser_timeouts))
+  {
+    dispense_kibble();
+    wait_time = random(min_wait_time_ms, max_wait_time_ms); // determine new wait time
+  }
 
   // update display
   if (millis() - time_last_display_refresh > display_refresh_time)
@@ -277,16 +291,33 @@ void loop()
     display.setTextColor(SSD1306_WHITE);
     display.setCursor(0, 0);
     char buff[128];
-    sprintf(buff, "dispensed: %d / %d, \n total %d", kibbles_dispensed, kibbles_total_available, kibbles_dispensed_total);
-    display.print(buff);
+
+    // tell user to refill
     if (reset_done)
     {
-      display.print("press green button after filling");
+      display.print("REFILL\n");
     }
+    else if (dispenser_timeout_counter >= max_dispenser_timeouts)
+    {
+      display.print("FAILED TO DISPENSE MULTIPLE TIMES\n");
+    }
+    else
+    {
+      sprintf(buff, "disp: %d / %d, tot %d \n ", kibbles_dispensed, kibbles_total_available, kibbles_dispensed_total);
+      display.print(buff);
+
+      // show time till next auto dispening if (true)
+      {
+        sprintf(buff, "time: %lu / %lu sec ", ((millis() - time_last_dispense)) / 1000, (wait_time) / 1000);
+        display.print(buff);
+      }
+    }
+
+    // refresh display
     display.display();
   }
 
-  // todo check if all dispensed and if so move back
+  // check if all dispensed and if so move back
   if ((!reset_done) && (kibbles_dispensed >= kibbles_total_available))
   {
     back_move_toggle = true;
