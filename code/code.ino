@@ -33,18 +33,40 @@ const int buzzerPin = 9;
 
 volatile bool change_detected = false;
 volatile bool back_move_toggle = false;
-volatile bool dispense_kibble_active = false;
+bool back_move_toggle_before = false;
+int time_back_move_started = millis();
+const int max_time_back_move = 2 * 1000; // [ms] maximum time of backwards movement (for when triggered by program)//todo reset to 10
 
 int motor_speed = 125;                       //[0-255] 0 (off) to 255 (max speed)
 const int max_time_dispensing_ms = 6 * 1000; // time after it stops dispensing if no kibble falls out
 long time_last_dispense;
 
+int kibbles_dispensed = 0;             // resets when filling dispenser
+int kibbles_dispensed_total = 0;       // just counts up
+const int kibbles_total_available = 3; // how many fit into the dispenser [default: 9]
+
 /*
 Function to dispense a kibble. Once started it is stopped by the IR sensor (which detects a kibble falling down)
 Can also be stoped by a timeout (max_time_dispensing_ms) and a button press.
+// running like this is bad, as basically it is blocking behaviour.
 */
 void dispense_kibble()
 {
+
+  // check if kibbles are still available
+  if (kibbles_dispensed >= kibbles_total_available)
+  {
+    // error sound
+    if (true)
+    {
+      tone(buzzerPin, 200);
+      delay(200);
+      tone(buzzerPin, 200);
+      delay(200);
+      noTone(buzzerPin);
+    }
+    return;
+  }
 
   bool do_run = true;
   long time_start = millis();
@@ -71,7 +93,8 @@ void dispense_kibble()
     {
       do_run = false;
       change_detected = false;
-      // todo add counter of kibbles dispensed
+      kibbles_dispensed++;
+      kibbles_dispensed_total++;
     }
 
     // button pressed, abort
@@ -121,18 +144,7 @@ void onButton2Pressed()
 void onButton1Pressed()
 {
   back_move_toggle = !back_move_toggle;
-  if (!back_move_toggle) // if already moving, stop the movement
-  {
-    // delay(PUSH_TIME_MS); // stop movement
-    myMotor->run(RELEASE);
-    Serial.println("backwards stopped");
-  }
-  else
-  { // start movement
-    myMotor->setSpeed(motor_speed);
-    myMotor->run(BACKWARD);
-    Serial.println("backwards started");
-  }
+  kibbles_dispensed = 0; // reset counter, as now the user should have filled the dispenser
 }
 
 void setup()
@@ -191,7 +203,39 @@ void loop()
   button1.read();
   button2.read();
 
+  // debugging output
+  if (true)
+  {
+    char buff[128];
+    sprintf(buff, "back_move_toggle %d, kibbles_dispensed: %d", back_move_toggle, kibbles_dispensed);
+    Serial.println(buff);
+  }
+
   // todo update display
+
+  // move motor back or stop it
+  if (back_move_toggle != back_move_toggle_before)
+  {                        // motor state needs to be changed
+    if (!back_move_toggle) // if already moving, stop the movement
+    {
+      // delay(PUSH_TIME_MS); // stop movement
+      myMotor->run(RELEASE);
+      back_move_toggle_before = false;
+    }
+    else
+    { // start movement
+      myMotor->setSpeed(motor_speed);
+      myMotor->run(BACKWARD);
+      back_move_toggle_before = true;
+      time_back_move_started = millis();
+    }
+  }
+
+  // check for timeout of back movement
+  if (back_move_toggle && (millis() - time_back_move_started > max_time_back_move))
+  {
+    back_move_toggle = false;
+  }
 
   if (change_detected)
   {
