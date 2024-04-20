@@ -1,11 +1,6 @@
 # Kibble Dispenser
 
-- add video to .md
-- documentation
-- wiring diagram
-- button for on/off and buzzer
-- 3d print enclsure for arduino
-- better dispenser, which does not fall over?
+![splash](rsc/splash.gif)
 
 ## Purpose
 
@@ -52,7 +47,19 @@ This device is meant to automatically dispense cat treats to keep cats active du
 
 To exactly dispense one kibble each time the machine is triggered was harder than expected. For future reference I'm quickly summarizing all the failed approaches here.
 
-![rsc/dispenser_model.png](rsc/dispenser_model.png)
+(Pictures below)
+
+From top to bottom:
+
+- Final design and only one to work reliably. Unfortunately, the kibbles need to be placed one by one
+- Using a feeding wheel like this was very unreliable. It would often not pickup anything
+- The auger screw worked sometimes, but often the kibbles would make clogs in the screw that would dispense all together. Redimensioning to make it smaller lead to a lot of jamming problems.
+- Inspired by [mint-dispenser](https://www.google.com/url?sa=i&url=https%3A%2F%2Fwww.redbows.co.uk%2Fmintoxmintdispensers&psig=AOvVaw3w5Bb2xVt6PeC3P82Nj_Pa&ust=1713714905318000&source=images&cd=vfe&opi=89978449&ved=0CBIQjRxqFwoTCICTuN2T0YUDFQAAAAAdAAAAABAE), in this design a plunger pushes the kibble out and when it moves back a new kibble should fall down. However the kibbles managed to form stable bridges in the dispenser.
+
+![rsc/dispenser_model.png|](rsc/dispenser_model.png)
+![image](rsc/dispenser_wheel.png)
+![image](rsc/dispenser_auger_screw.png)
+![image](rsc/dispenser_mint.png)
 
 ## Dependencies
 
@@ -60,5 +67,3 @@ To exactly dispense one kibble each time the machine is triggered was harder tha
 - [Adafruit_SSD1306]()
 - [Adafruit GFX](https://www.arduino.cc/reference/en/libraries/adafruit-gfx-library/)
 - [EasyButton.h](https://www.arduino.cc/reference/en/libraries/easybutton/) by Evert Arias
-
----
